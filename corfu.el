@@ -105,6 +105,9 @@
     map)
   "Corfu keymap used when popup is shown.")
 
+(defvar-local corfu--extra-properties nil
+  "Completion extra properties.")
+
 (defvar-local corfu--candidates nil
   "List of candidates.")
 
@@ -131,9 +134,11 @@
 
 (defun corfu--popup (pos idx lo bar lines)
   "Show LINES as popup at POS, with IDX highlighted and scrollbar between LO and LO+BAR."
-  (let* ((width (if lines (apply #'max (mapcar #'string-width lines)) 0))
-         (col (+ (- pos (line-beginning-position)) corfu--base))
+  (let* ((col (+ (- pos (line-beginning-position)) corfu--base))
          (row 0)
+         (max-width (- (window-total-width) col 8))
+         (lines (mapcar (lambda (x) (truncate-string-to-width x max-width)) lines))
+         (width (if lines (apply #'max (mapcar #'string-width lines)) 0))
          (pixelpos (cdr (window-absolute-pixel-position pos)))
          (lh (window-default-line-height))
          (count (length lines))
@@ -144,6 +149,7 @@
         (forward-line (- -1 count)))
       (beginning-of-line)
       (dolist (line lines)
+        (setq line (truncate-string-to-width line max-width))
         (let ((old (point)))
           (forward-line 1)
           (beginning-of-line)
@@ -220,10 +226,9 @@
         (lambda (x) (and (not (string-match-p ignore x)) (funcall pred x)))
       (lambda (x) (not (string-match-p ignore x))))))
 
-(defun corfu--recompute-candidates (content bounds pt table pred)
-  "Recompute candidates from CONTENT, BOUNDS, PT, TABLE and PRED."
+(defun corfu--recompute-candidates (content metadata bounds pt table pred)
+  "Recompute candidates from CONTENT, METADATA, BOUNDS, PT, TABLE and PRED."
   (let* ((field (substring content (car bounds) (+ pt (cdr bounds))))
-         (metadata (completion-metadata (substring content 0 pt) table pred))
          (completing-file (eq (completion-metadata-get metadata 'category) 'file))
          (all-hl (corfu--all-completions content table
                                          (if completing-file
@@ -245,10 +250,10 @@
     (setq all (corfu--move-to-front field all))
     (list base (length all) all (cdr all-hl))))
 
-(defun corfu--update-candidates (content bounds pt table pred)
-  "Update candidates from CONTENT, BOUNDS, PT, TABLE and PRED."
+(defun corfu--update-candidates (content metadata bounds pt table pred)
+  "Update candidates from CONTENT, METADATA, BOUNDS, PT, TABLE and PRED."
   (pcase (let ((while-no-input-ignore-events '(selection-request)))
-           (while-no-input (corfu--recompute-candidates content bounds pt table pred)))
+           (while-no-input (corfu--recompute-candidates content metadata bounds pt table pred)))
     (`(,base ,total ,candidates ,hl)
      (setq corfu--input (cons content pt)
            corfu--candidates candidates
@@ -265,12 +270,20 @@
              (not (eq this-command 'keyboard-quit)))
     (corfu-insert)))
 
+(defun corfu--annotate (metadata candidates)
+  "Annotate CANDIDATES with annotation function specified by METADATA."
+  (if-let (ann (or (completion-metadata-get metadata 'company-docsig)
+                   (plist-get corfu--extra-properties :company-docsig)))
+      (mapcar (lambda (cand) (concat cand (funcall ann cand))) candidates)
+    candidates))
+
 (defun corfu--refresh (beg end table pred)
   "Refresh Corfu overlays, given BEG, END, TABLE and PRED."
   (let* ((pt (- (point) beg))
          (content (buffer-substring-no-properties beg end))
          (before (substring content 0 pt))
          (after (substring content pt))
+         (metadata (completion-metadata (substring content 0 pt) table pred))
          ;; bug#47678: `completion-boundaries` fails for `partial-completion`
          ;; if the cursor is moved between the slashes of "~//".
          ;; See also vertico.el which has the same issue.
@@ -281,7 +294,7 @@
                                                 after)
                        (t (cons 0 (length after)))))))
     (unless (equal corfu--input (cons content pt))
-      (corfu--update-candidates content bounds pt table pred))
+      (corfu--update-candidates content metadata bounds pt table pred))
     (when (and
            ;; Empty input
            (or (eq this-command 'completion-at-point)
@@ -308,8 +321,9 @@
                       (- corfu--index start)
                       (and (> corfu--total corfu-count) lo)
                       bar
-                      (funcall corfu--highlight
-                               (seq-subseq corfu--candidates start end)))))))
+                      (corfu--annotate metadata
+                                       (funcall corfu--highlight
+                                                (seq-subseq corfu--candidates start end))))))))
 
 (defun corfu--post-command-hook ()
   "Refresh Corfu after last command."
@@ -336,6 +350,7 @@
                                 corfu--total
                                 corfu--popup-ovs
                                 corfu--current-ov
+                                corfu--extra-properties
                                 completion-show-inline-help
                                 completion-auto-help)))
 
@@ -348,7 +363,9 @@
         (setq corfu--current-ov nil))
     (pcase-let ((`(,beg ,end . ,_) completion-in-region--data))
       (unless corfu--current-ov
-        (setq corfu--current-ov (make-overlay beg end nil t t)))
+        (setq corfu--current-ov (make-overlay beg end nil t t))
+        (overlay-put corfu--current-ov 'priority 1000)
+        (overlay-put corfu--current-ov 'window (selected-window)))
       (overlay-put corfu--current-ov 'display (nth corfu--index corfu--candidates)))))
 
 (defun corfu-next ()
@@ -420,6 +437,7 @@
   (let ((pred completion-in-region-mode--predicate))
     (setq completion-in-region-mode--predicate
           (lambda () (or corfu--popup-ovs (funcall pred)))))
+  (setq corfu--extra-properties completion-extra-properties)
   (set (make-local-variable 'completion-show-inline-help) nil)
   (set (make-local-variable 'completion-auto-help) nil)
   (setcdr (assq #'completion-in-region-mode minor-mode-overriding-map-alist) corfu-map)
