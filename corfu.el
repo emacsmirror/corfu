@@ -55,6 +55,10 @@
   "Enable cycling for `corfu-next' and `corfu-previous'."
   :type 'boolean)
 
+(defcustom corfu-confirm (propertize "No matches" 'face 'error)
+  "Show the given string when there are no matches or nil in order to exit directly."
+  :type '(choice (const nil) string))
+
 (defgroup corfu-faces nil
   "Faces used by Corfu."
   :group 'corfu
@@ -202,7 +206,7 @@
           (forward-line 1)
           (beginning-of-line)
           (when (= (point) old)
-            (setq tail (concat (propertize " " 'cursor t) "\n" (make-string col 32)))))
+            (setq tail (concat #(" " 0 1 (cursor t)) "\n" (make-string col 32)))))
         (let* ((beg (point))
                (end (line-end-position))
                (prefix (or tail (and (> col (- end beg)) (make-string (- col (- end beg)) 32))))
@@ -372,6 +376,8 @@
                              (t (cons 0 (length after)))))))
     (unless (equal corfu--input (cons str pt))
       (corfu--update-candidates str bounds metadata pt table pred))
+    (when (and (not corfu--candidates) corfu-confirm)
+      (corfu--popup beg -1 nil nil (list corfu-confirm)))
     (when (and
            ;; Empty input
            (or (eq this-command 'completion-at-point)
@@ -512,15 +518,16 @@
 (defun corfu-insert ()
   "Insert current candidate."
   (interactive)
-  (pcase-let* ((`(,beg ,end . _) completion-in-region--data)
-               (str (buffer-substring-no-properties beg end))
-               (newstr (concat (substring str 0 corfu--base)
-                               (substring-no-properties (nth (max 0 corfu--index) corfu--candidates)))))
-    (completion--replace beg end newstr)
-    ;; XXX Is the :exit-function handling sufficient?
-    (when-let (exit (plist-get corfu--extra-properties :exit-function))
-      (funcall exit newstr 'finished))
-    (completion-in-region-mode -1)))
+  (when (>= corfu--index 0)
+    (pcase-let* ((`(,beg ,end . _) completion-in-region--data)
+                 (str (buffer-substring-no-properties beg end))
+                 (newstr (concat (substring str 0 corfu--base)
+                                 (substring-no-properties (nth corfu--index corfu--candidates)))))
+      (completion--replace beg end newstr)
+      ;; XXX Is the :exit-function handling sufficient?
+      (when-let (exit (plist-get corfu--extra-properties :exit-function))
+        (funcall exit newstr 'finished))))
+  (completion-in-region-mode -1))
 
 (defun corfu--setup ()
   "Setup Corfu completion state."
