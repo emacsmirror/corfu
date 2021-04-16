@@ -66,18 +66,16 @@ completion. Here is an example configuration:
     :hook ((prog-mode . corfu-mode)
            (eshell-mode . corfu-mode))
 
-    ;; Optionall enable cycling for `corfu-next' and `corfu-previous'.
+    :config
+
+    ;; For completion in region, the `basic' completion style is needed
+    ;; in order to enable prefix filtering (for example on a LSP server).
+    ;; Additionally enable the `orderless' completion style.
+    (setq corfu-completion-styles '(basic orderless))
+
+    ;; Optionally enable cycling for `corfu-next' and `corfu-previous'.
     ;; (setq corfu-cycle t)
   )
-
-  ;; Use the `orderless' completion style.
-  ;; Enable `partial-completion' for files to allow path expansion.
-  ;; You may prefer to use `initials' instead of `partial-completion'.
-  (use-package orderless
-    :init
-    (setq completion-styles '(orderless)
-          completion-category-defaults nil
-          completion-category-overrides '((file (styles . (partial-completion))))))
 
   ;; A few more useful configurations...
   (use-package emacs

@@ -55,6 +55,10 @@
   "Enable cycling for `corfu-next' and `corfu-previous'."
   :type 'boolean)
 
+(defcustom corfu-completion-styles nil
+  "Completion styles to use for completion in region, defaults to `completion-styles'."
+  :type '(choice (const nil) (repeat symbol)))
+
 (defgroup corfu-faces nil
   "Faces used by Corfu."
   :group 'corfu
@@ -261,7 +265,8 @@
               (lambda (pattern cands)
                 (setq hl (lambda (x) (orderless-highlight-matches pattern x)))
                 cands)))
-    (cons (apply #'completion-all-completions args) hl)))
+    (let ((completion-styles (or corfu-completion-styles completion-styles)))
+      (cons (apply #'completion-all-completions args) hl))))
 
 (defun corfu--sort-predicate (x y)
   "Sorting predicate which compares X and Y."
@@ -505,7 +510,8 @@
                  (pt (max 0 (- (point) beg)))
                  (str (buffer-substring-no-properties beg end))
                  (metadata (completion-metadata (substring str 0 pt) table pred)))
-      (pcase (completion-try-completion str table pred pt metadata)
+      (pcase (let ((completion-styles (or corfu-completion-styles completion-styles)))
+               (completion-try-completion str table pred pt metadata))
         ((and `(,newstr . ,newpt) (guard (not (equal str newstr))))
          (completion--replace beg end newstr)
          (goto-char (+ beg newpt)))))))
@@ -547,7 +553,8 @@
 
 (defun corfu--completion-in-region (&rest args)
   "Corfu completion in region function passing ARGS to `completion--in-region'."
-  (let ((completion-show-inline-help)
+  (let ((completion-styles (or corfu-completion-styles completion-styles))
+        (completion-show-inline-help)
         (completion-auto-help))
     (apply #'completion--in-region args)))
 
@@ -558,7 +565,7 @@
   (remove-hook 'completion-in-region-mode-hook #'corfu--mode-hook 'local)
   (when corfu--orig-completion-in-region
     (setq completion-in-region-function corfu--orig-completion-in-region
-          corfu--orig-completion-in-region nil)
+          corfu--orig-completion-in-region nil))
   (when corfu-mode
     (add-hook 'completion-in-region-mode-hook #'corfu--mode-hook nil 'local)
     (setq corfu--orig-completion-in-region #'corfu--completion-in-region
