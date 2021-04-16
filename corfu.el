@@ -102,6 +102,8 @@
     (define-key map "\e\e\e" #'keyboard-quit)
     (define-key map "\r" #'corfu-insert)
     (define-key map "\t" #'corfu-complete)
+    (define-key map "\eg" #'corfu-show-location)
+    (define-key map "\eh" #'corfu-show-help)
     map)
   "Corfu keymap used when popup is shown.")
 
@@ -397,6 +399,48 @@
   "Go to last candidate."
   (interactive)
   (corfu--goto (- corfu--total 1)))
+
+(defun corfu--save-window-excursion ()
+  "Save window excursion around BODY."
+  (let ((config (make-symbol "config"))
+        (hide (make-symbol "hide")))
+    `(let ((,config (current-window-configuration))
+           (,hide (make-symbol "corfu--hide-help")))
+       (fset ,hide (lambda ()
+                     (remove-hook 'pre-command-hook ,hide)
+                     (set-window-configuration ,config)))
+       ,@body
+       (add-hook 'pre-command-hook ,hide))))
+
+(defun corfu-show-help ()
+  "Show documentation of current candidate."
+  (interactive)
+  (corfu--save-window-excursion
+   (when-let* ((fun (and (>= corfu--index 0) (plist-get corfu--extra-properties :company-doc-buffer)))
+               (buf (funcall fun (nth corfu--index corfu--candidates))))
+     (let ((start))
+       (when (consp buf)
+         (setq start (cdr buf)
+               buf (car buf)))
+       (set-window-start (display-buffer buf t) (if start start (point-min)))))))
+
+(defun corfu-show-location ()
+  "Show location of current candidate."
+  (interactive)
+  (corfu--save-window-excursion
+   (when-let* ((fun (and (>= corfu--index 0) (plist-get corfu--extra-properties :company-location)))
+               (loc (funcall fun (nth corfu--index corfu--candidates))))
+     (let* ((noninteractive t)
+            (non-essential t)
+            (buf (or (and (bufferp (car loc)) (car loc)) (find-file-noselect (car loc) t))))
+       (with-selected-window (display-buffer buf t)
+         (save-restriction
+           (widen)
+           (if (bufferp (car loc))
+               (goto-char (cdr loc))
+             (goto-char (point-min))
+             (forward-line (1- (cdr loc))))
+           (set-window-start nil (point))))))))
 
 (defun corfu-complete ()
   "Try to complete current input."
