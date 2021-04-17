@@ -244,6 +244,15 @@ If `line-spacing/=nil' or in text-mode, the background color is used instead.")
         (nconc head (delq (setcar found nil) list)))
     list))
 
+(defun corfu-help ()
+  (interactive)
+  (corfu--restore-on-next-command)
+  (pcase-let ((`(,beg ,end ,table ,pred) completion-in-region--data))
+    (let ((minibuffer-completion-table table)
+          (minibuffer-completion-predicate pred)
+          (completion-extra-properties corfu--extra-properties))
+      (minibuffer-completion-help beg end))))
+
 ;; bug#47711: Deferred highlighting for `completion-all-completions'
 (declare-function orderless-highlight-matches "ext:orderless")
 (defun corfu--all-completions (&rest args)
